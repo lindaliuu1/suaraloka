@@ -3,7 +3,28 @@ const json = (data, status=200, extra={}) => new Response(JSON.stringify(data),{
 const bad = (message,status=400)=>json({error:message},status);
 const cookie = (req,name)=>req.headers.get('cookie')?.split(';').map(s=>s.trim()).find(s=>s.startsWith(name+'='))?.slice(name.length+1)||'';
 const hex = b=>Array.from(new Uint8Array(b)).map(x=>x.toString(16).padStart(2,'0')).join('');
-async function sign(secret,message){const k=await crypto.subtle.importKey('raw',enc.encode(secret),'HMAC',false,['sign']);return hex(await crypto.subtle.sign('HMAC',k,enc.encode(message)));}
+
+async function sign(secret, message) {
+  const key = await crypto.subtle.importKey(
+    'raw',
+    enc.encode(secret),
+    {
+      name: 'HMAC',
+      hash: 'SHA-256'
+    },
+    false,
+    ['sign']
+  );
+
+  const signature = await crypto.subtle.sign(
+    'HMAC',
+    key,
+    enc.encode(message)
+  );
+
+  return hex(signature);
+}
+
 async function authorized(req,env){const token=cookie(req,'sl_session');if(!token||!env.SESSION_SECRET)return false;const [expiry,sig]=token.split('.');if(!/^\d+$/.test(expiry)||Number(expiry)<Date.now()||!sig)return false;const expected=await sign(env.SESSION_SECRET,expiry);if(expected.length!==sig.length)return false;let mismatch=0;for(let i=0;i<sig.length;i++)mismatch|=sig.charCodeAt(i)^expected.charCodeAt(i);return mismatch===0;}
 const slugify=s=>String(s||'').normalize('NFKD').toLowerCase().replace(/[^a-z0-9\s-]/g,'').trim().replace(/\s+/g,'-').replace(/-+/g,'-').slice(0,100);
 const escapeHtml=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
