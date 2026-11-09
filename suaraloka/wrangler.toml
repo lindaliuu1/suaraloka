@@ -1,0 +1,18 @@
+name = "suaraloka"
+main = "src/index.js"
+compatibility_date = "2026-10-01"
+workers_dev = true
+
+[assets]
+directory = "./public"
+binding = "ASSETS"
+run_worker_first = ["/api/*", "/media/*", "/artikel/*", "/kategori/*"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "suaraloka-db"
+database_id = "GANTI_DENGAN_DATABASE_ID"
+
+[[r2_buckets]]
+binding = "MEDIA"
+bucket_name = "suaraloka-media"
