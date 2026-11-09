@@ -3,32 +3,44 @@ const json = (data, status=200, extra={}) => new Response(JSON.stringify(data),{
 const bad = (message,status=400)=>json({error:message},status);
 const cookie = (req,name)=>req.headers.get('cookie')?.split(';').map(s=>s.trim()).find(s=>s.startsWith(name+'='))?.slice(name.length+1)||'';
 const hex = b=>Array.from(new Uint8Array(b)).map(x=>x.toString(16).padStart(2,'0')).join('');
-
-async function sign(secret, message) {
-  const key = await crypto.subtle.importKey(
-    'raw',
-    enc.encode(secret),
-    {
-      name: 'HMAC',
-      hash: 'SHA-256'
-    },
-    false,
-    ['sign']
-  );
-
-  const signature = await crypto.subtle.sign(
-    'HMAC',
-    key,
-    enc.encode(message)
-  );
-
-  return hex(signature);
-}
-
+async function sign(secret,message){const k=await crypto.subtle.importKey('raw',enc.encode(secret),{name:'HMAC',hash:'SHA-256'},false,['sign']);return hex(await crypto.subtle.sign('HMAC',k,enc.encode(message)));}
 async function authorized(req,env){const token=cookie(req,'sl_session');if(!token||!env.SESSION_SECRET)return false;const [expiry,sig]=token.split('.');if(!/^\d+$/.test(expiry)||Number(expiry)<Date.now()||!sig)return false;const expected=await sign(env.SESSION_SECRET,expiry);if(expected.length!==sig.length)return false;let mismatch=0;for(let i=0;i<sig.length;i++)mismatch|=sig.charCodeAt(i)^expected.charCodeAt(i);return mismatch===0;}
 const slugify=s=>String(s||'').normalize('NFKD').toLowerCase().replace(/[^a-z0-9\s-]/g,'').trim().replace(/\s+/g,'-').replace(/-+/g,'-').slice(0,100);
 const escapeHtml=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-function articleHTML(a){const title=escapeHtml(a.title),desc=escapeHtml(a.excerpt||a.title),img=a.image?.startsWith('/media/')?`<meta property="og:image" content="https://suaraloka.com${escapeHtml(a.image)}">`:'';return `<!doctype html><html lang="id"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title} | Suaraloka</title><meta name="description" content="${desc}"><meta property="og:title" content="${title}"><meta property="og:description" content="${desc}">${img}<link rel="canonical" href="https://suaraloka.com/artikel/${encodeURIComponent(a.slug)}"><link rel="stylesheet" href="/assets/style.css"></head><body><header class="top"><div class="wrap head"><a class="brand" href="/"><span class="brandmark">S</span><span>SUARA<span class="accent">LOKA</span><small>Suara Lokal, Wawasan Nasional</small></span></a><nav><a href="/">Beranda</a><a href="/berita/">Berita</a><a href="/admin/">Redaksi</a></nav></div></header><main class="wrap article-page"><a class="muted" href="/berita/">← Kembali ke berita</a><div class="eyebrow">${escapeHtml(a.category)}</div><h1>${title}</h1><p class="muted">${escapeHtml(a.author)} · ${escapeHtml((a.published_at||a.created_at).slice(0,10))}</p>${a.image?.startsWith('/media/')?`<img class="article-cover" src="${escapeHtml(a.image)}" alt="${title}">`:''}<div class="article-body">${escapeHtml(a.body).split(/\n\n+/).map(p=>`<p>${p.replace(/\n/g,'<br>')}</p>`).join('')}</div><a class="btn" href="/berita/">Lihat berita lainnya</a></main><footer><div class="wrap">© ${new Date().getUTCFullYear()} Suaraloka · Portal Informasi & Berita</div></footer></body></html>`;}
+
+// Render a restricted Markdown subset safely; all user-supplied HTML is escaped.
+function renderMarkdown(source) {
+  const escape = escapeHtml;
+  const inline = value => {
+    const links = [];
+    let text = String(value).replace(/\[([^\]\n]{1,160})\]\((https?:\/\/[^\s)]+)\)/g, (_, label, url) => {
+      const key = `MDLINKTOKEN${links.length}END`;
+      links.push(`<a href="${escape(url)}" target="_blank" rel="noopener noreferrer nofollow">${escape(label)}</a>`);
+      return key;
+    });
+    text = escape(text).replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>')
+      .replace(/(?<!\*)\*([^*\n]+)\*(?!\*)/g, '<em>$1</em>')
+      .replace(/`([^`\n]+)`/g, '<code>$1</code>');
+    return text.replace(/MDLINKTOKEN(\d+)END/g, (_, n) => links[Number(n)] || '');
+  };
+  const lines = String(source || '').replace(/\r\n?/g, '\n').split('\n');
+  let html = '', paragraph = [], list = [];
+  const flushParagraph = () => { if (paragraph.length) { html += '<p>' + paragraph.map(inline).join('<br>') + '</p>'; paragraph = []; } };
+  const flushList = () => { if (list.length) { html += '<ul>' + list.map(x => '<li>' + inline(x) + '</li>').join('') + '</ul>'; list = []; } };
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) { flushParagraph(); flushList(); continue; }
+    const heading = /^(#{1,3})\s+(.+)$/.exec(trimmed);
+    const bullet = /^[-*]\s+(.+)$/.exec(trimmed);
+    if (heading) { flushParagraph(); flushList(); const level = Math.min(heading[1].length + 1, 4); html += `<h${level}>${inline(heading[2])}</h${level}>`; }
+    else if (bullet) { flushParagraph(); list.push(bullet[1]); }
+    else { flushList(); paragraph.push(trimmed); }
+  }
+  flushParagraph(); flushList();
+  return html;
+}
+
+function articleHTML(a){const title=escapeHtml(a.title),desc=escapeHtml(a.excerpt||a.title),img=a.image?.startsWith('/media/')?`<meta property="og:image" content="https://suaraloka.com${escapeHtml(a.image)}">`:'';return `<!doctype html><html lang="id"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title} | Suaraloka</title><meta name="description" content="${desc}"><meta property="og:title" content="${title}"><meta property="og:description" content="${desc}">${img}<link rel="canonical" href="https://suaraloka.com/artikel/${encodeURIComponent(a.slug)}"><link rel="stylesheet" href="/assets/style.css"></head><body><header class="top"><div class="wrap head"><a class="brand" href="/"><span class="brandmark">S</span><span>SUARA<span class="accent">LOKA</span><small>Suara Lokal, Wawasan Nasional</small></span></a><nav><a href="/">Beranda</a><a href="/berita/">Berita</a><a href="/admin/">Redaksi</a></nav></div></header><main class="wrap article-page"><a class="muted" href="/berita/">← Kembali ke berita</a><div class="eyebrow">${escapeHtml(a.category)}</div><h1>${title}</h1><p class="muted">${escapeHtml(a.author)} · ${escapeHtml((a.published_at||a.created_at).slice(0,10))}</p>${a.image?.startsWith('/media/')?`<img class="article-cover" src="${escapeHtml(a.image)}" alt="${title}">`:''}<div class="article-body">${renderMarkdown(a.body)}</div><a class="btn" href="/berita/">Lihat berita lainnya</a></main><footer><div class="wrap">© ${new Date().getUTCFullYear()} Suaraloka · Portal Informasi & Berita</div></footer></body></html>`;}
 export default {async fetch(req,env){try{
  const url=new URL(req.url),p=url.pathname,method=req.method;
  if(p==='/api/login'&&method==='POST'){

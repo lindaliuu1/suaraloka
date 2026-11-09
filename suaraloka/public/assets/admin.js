@@ -9,3 +9,20 @@ function reset(){editId=null;$('#article-form').reset();$('#image').value='';$('
 $('#image-file').onchange=async()=>{const file=$('#image-file').files[0];if(!file)return;$('#image-preview').textContent='Mengunggah...';try{const data=new FormData();data.append('image',file);const r=await api('/api/upload',{method:'POST',body:data});$('#image').value=r.url;$('#image-preview').textContent='Gambar berhasil diunggah: '+r.url}catch(e){$('#image').value='';$('#image-preview').textContent=e.message}};
 $('#article-form').onsubmit=async e=>{e.preventDefault();const status=e.submitter?.dataset.status||'draft';const data={status};for(const key of ['title','slug','excerpt','body','category','author','image'])data[key]=$('#'+key).value;$('#message').textContent='Menyimpan...';try{const result=await api(editId?'/api/articles/'+editId:'/api/articles',{method:editId?'PUT':'POST',headers:{'content-type':'application/json'},body:JSON.stringify(data)});$('#message').textContent=status==='published'?'Berita berhasil diterbitkan.':'Draft berhasil disimpan.';await refresh();editId=result.id;$('#editor-title').textContent='Edit Berita #'+editId}catch(err){$('#message').textContent='Gagal: '+err.message}};
 api('/api/me').then(x=>view(x.authenticated)).catch(()=>view(false));
+
+// Simple editing shortcuts; saved content remains Markdown text.
+function insertFormat(kind) {
+ const field=$('#body');const start=field.selectionStart,end=field.selectionEnd;
+ const selected=field.value.slice(start,end);let before='',after='',fallback='teks';
+ if(kind==='bold'){before='**';after='**';}
+ if(kind==='italic'){before='*';after='*';}
+ if(kind==='heading'){before='\n## ';fallback='Subjudul';}
+ if(kind==='list'){before='\n- ';fallback='Poin daftar';}
+ if(kind==='link'){before='[';after='](https://example.com)';fallback='teks tautan';}
+ const content=selected||fallback;
+ field.setRangeText(before+content+after,start,end,'select');field.focus();
+ field.setSelectionRange(start+before.length,start+before.length+content.length);
+ $('#article-preview').classList.add('hidden');
+}
+document.querySelectorAll('[data-format]').forEach(button=>button.addEventListener('click',()=>insertFormat(button.dataset.format)));
+$('#preview-toggle').addEventListener('click',()=>{ const p=$('#article-preview');p.classList.toggle('hidden');p.textContent=$('#body').value;$('#preview-toggle').textContent=p.classList.contains('hidden')?'Pratinjau teks':'Tutup pratinjau'; });
