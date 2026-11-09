@@ -11,7 +11,7 @@ run_worker_first = ["/api/*", "/media/*", "/artikel/*", "/kategori/*"]
 [[d1_databases]]
 binding = "DB"
 database_name = "suaraloka-db"
-database_id = "GANTI_DENGAN_DATABASE_ID"
+database_id = "1d2b8ee0-6ba7-4ec8-b1d6-e3842e177052"
 
 [[r2_buckets]]
 binding = "MEDIA"
