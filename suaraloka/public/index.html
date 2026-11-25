@@ -110,5 +110,49 @@
   </footer>
 
   <script src="/assets/site.js" defer></script>
+
+  
+<script>
+(function () {
+  function hideShuffleText() {
+    document.querySelectorAll('[data-backlink-carousel]')
+      .forEach(function (carousel) {
+        const root = carousel.shadowRoot;
+        if (!root) return;
+
+        // Tambahkan CSS langsung ke Shadow DOM
+        if (!root.querySelector('#hide-shuffle-style')) {
+          const style = document.createElement('style');
+          style.id = 'hide-shuffle-style';
+          style.textContent = `
+            #shuffle-hint,
+            .shuffle-hint {
+              display: none !important;
+            }
+          `;
+          root.appendChild(style);
+        }
+
+        // Sembunyikan elemen secara langsung
+        root.querySelectorAll('#shuffle-hint, .shuffle-hint')
+          .forEach(function (element) {
+            element.style.setProperty(
+              'display', 'none', 'important'
+            );
+          });
+      });
+  }
+
+  hideShuffleText();
+
+  // Periksa ulang jika carousel dimuat belakangan
+  const interval = setInterval(hideShuffleText, 500);
+
+  window.addEventListener('pagehide', function () {
+    clearInterval(interval);
+  });
+})();
+</script>
+
 </body>
 </html>
